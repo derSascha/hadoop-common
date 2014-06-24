@@ -363,10 +363,16 @@ class NameNodeRpcServer implements NamenodeProtocols {
         FSLimitException.MaxDirectoryItemsExceededException.class);
     
     this.energyBaseDataNodeFilter = new EnergyBaseDataNodeFilter(
-    		conf.get(DFSConfigKeys.DFS_ENERGY_DATANODE_SELECTOR_ADDRESS,
-    				DFSConfigKeys.DFS_ENERGY_DATANODE_SELECTOR_ADDRESS_DEFAULT),
-    		conf.getInt(DFSConfigKeys.DFS_ENERGY_DATANODE_SELECTOR_PORT,
-    				DFSConfigKeys.DFS_ENERGY_DATANODE_SELECTOR_PORT_DEFAULT));
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME_DEFAULT),
+      conf.getInt(DFSConfigKeys.DFS_ENERGY_ZABBIX_PORT,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_PORT_DEFAULT),
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_URL,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_URL_DEFAULT),
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_USERNAME,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_USERNAME_DEFAULT),
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_PASSWORD,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_PASSWORD_DEFAULT));
  }
 
   /** Allow access to the client RPC server for testing */

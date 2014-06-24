@@ -635,8 +635,14 @@ public class DFSConfigKeys extends CommonConfigurationKeys {
   public static final String DFS_NFS_USER_NAME_KEY = "dfs.nfs.kerberos.principal";
 
   // Energy project
-  public static final String DFS_ENERGY_DATANODE_SELECTOR_ADDRESS = "dfs.energy.datanode-selector.address";
-  public static final String DFS_ENERGY_DATANODE_SELECTOR_ADDRESS_DEFAULT = "127.0.0.1";
-  public static final String DFS_ENERGY_DATANODE_SELECTOR_PORT = "dfs.energy.datanode-selector.port";
-  public static final int DFS_ENERGY_DATANODE_SELECTOR_PORT_DEFAULT = 9090;
+  public static final String DFS_ENERGY_ZABBIX_HOSTNAME = "dfs.energy.zabbix.hostname";
+  public static final String DFS_ENERGY_ZABBIX_HOSTNAME_DEFAULT = "mpjss14.cit.tu-berlin.de";
+  public static final String DFS_ENERGY_ZABBIX_PORT = "dfs.energy.zabbix.port";
+  public static final int DFS_ENERGY_ZABBIX_PORT_DEFAULT = 10051;
+  public static final String DFS_ENERGY_ZABBIX_REST_URL = "dfs.energy.zabbix.rest.url";
+  public static final String DFS_ENERGY_ZABBIX_REST_URL_DEFAULT = "https://mpjss14.cit.tu-berlin.de/zabbix/api_jsonrpc.php";
+  public static final String DFS_ENERGY_ZABBIX_REST_USERNAME = "dfs.energy.zabbix.rest.username";
+  public static final String DFS_ENERGY_ZABBIX_REST_USERNAME_DEFAULT = "admin";
+  public static final String DFS_ENERGY_ZABBIX_REST_PASSWORD = "dfs.energy.zabbix.rest.password";
+  public static final String DFS_ENERGY_ZABBIX_REST_PASSWORD_DEFAULT = "zabbix!";
 }

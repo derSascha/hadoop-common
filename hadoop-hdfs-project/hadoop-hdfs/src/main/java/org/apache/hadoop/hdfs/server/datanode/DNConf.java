@@ -90,6 +90,9 @@ public class DNConf {
 
   final long maxLockedMemory;
 
+  final String zabbixHostname;
+  final int zabbixPort;
+
   public DNConf(Configuration conf) {
     socketTimeout = conf.getInt(DFS_CLIENT_SOCKET_TIMEOUT_KEY,
         HdfsServerConstants.READ_TIMEOUT);
@@ -167,6 +170,13 @@ public class DNConf {
     this.restartReplicaExpiry = conf.getLong(
         DFS_DATANODE_RESTART_REPLICA_EXPIRY_KEY,
         DFS_DATANODE_RESTART_REPLICA_EXPIRY_DEFAULT) * 1000L;
+
+    this.zabbixHostname = conf.get(
+        DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME,
+        DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME_DEFAULT);
+    this.zabbixPort = conf.getInt(
+        DFSConfigKeys.DFS_ENERGY_ZABBIX_PORT,
+        DFSConfigKeys.DFS_ENERGY_ZABBIX_PORT_DEFAULT);
   }
   
   // We get minimumNameNodeVersion via a method so it can be mocked out in tests.

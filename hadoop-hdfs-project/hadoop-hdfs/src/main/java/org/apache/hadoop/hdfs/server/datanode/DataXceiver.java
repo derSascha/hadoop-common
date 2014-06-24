@@ -45,6 +45,7 @@ import java.nio.channels.ClosedChannelException;
 import java.util.Arrays;
 
 import org.apache.commons.logging.Log;
+import org.apache.hadoop.hdfs.DFSConfigKeys;
 import org.apache.hadoop.hdfs.ExtendedBlockId;
 import org.apache.hadoop.hdfs.ShortCircuitShm.SlotId;
 import org.apache.hadoop.hdfs.net.Peer;
@@ -86,6 +87,7 @@ import org.apache.hadoop.util.DataChecksum;
 import com.google.common.net.InetAddresses;
 import com.google.protobuf.ByteString;
 
+import de.tuberlin.cit.project.energy.hadoop.DataNodeTransferLogger;
 
 /**
  * Thread for processing incoming/outgoing data stream.
@@ -104,6 +106,7 @@ class DataXceiver extends Receiver implements Runnable {
   private long opStartTime; //the start time of receiving an Op
   private final InputStream socketIn;
   private OutputStream socketOut;
+  private final DataNodeTransferLogger dataNodeTransferLogger;
 
   /**
    * Client Name used in previous operation. Not available on first request
@@ -133,6 +136,9 @@ class DataXceiver extends Receiver implements Runnable {
       LOG.debug("Number of active connections is: "
           + datanode.getXceiverCount());
     }
+
+    this.dataNodeTransferLogger = new DataNodeTransferLogger(
+        this.dnConf.zabbixHostname, this.dnConf.zabbixPort);
   }
 
   /**
@@ -475,6 +481,8 @@ class DataXceiver extends Receiver implements Runnable {
     checkAccess(out, true, block, blockToken,
         Op.READ_BLOCK, BlockTokenSecretManager.AccessMode.READ);
   
+    this.dataNodeTransferLogger.logTransferStart(datanode.getDisplayName(), remoteAddress, blockToken);
+
     // send the block
     BlockSender blockSender = null;
     DatanodeRegistration dnR = 
