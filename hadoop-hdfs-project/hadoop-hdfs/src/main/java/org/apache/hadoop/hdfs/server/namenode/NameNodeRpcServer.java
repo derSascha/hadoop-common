@@ -124,6 +124,7 @@ import org.apache.hadoop.hdfs.server.protocol.RemoteEditLogManifest;
 import org.apache.hadoop.hdfs.server.protocol.StorageBlockReport;
 import org.apache.hadoop.hdfs.server.protocol.StorageReceivedDeletedBlocks;
 import org.apache.hadoop.hdfs.server.protocol.StorageReport;
+import org.apache.hadoop.hdfs.web.JsonUtil;
 import org.apache.hadoop.io.EnumSetWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.ipc.ProtobufRpcEngine;
@@ -156,7 +157,8 @@ import org.apache.hadoop.util.VersionUtil;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.protobuf.BlockingService;
 
-import de.tuberlin.cit.project.energy.hadoop.EnergyBaseDataNodeFilter;
+import de.tuberlin.cit.project.energy.hadoop.BlockObserver;
+import de.tuberlin.cit.project.energy.hadoop.EnergyConservingDataNodeFilter;
 
 /**
  * This class is responsible for handling all of the RPC calls to the NameNode.
@@ -185,7 +187,8 @@ class NameNodeRpcServer implements NamenodeProtocols {
   
   private final String minimumDataNodeVersion;
 
-  private final EnergyBaseDataNodeFilter energyBaseDataNodeFilter;
+  private final BlockObserver blockObserver;
+  private final EnergyConservingDataNodeFilter energyConservingDataNodeFilter;
 
   public NameNodeRpcServer(Configuration conf, NameNode nn)
       throws IOException {
@@ -361,8 +364,19 @@ class NameNodeRpcServer implements NamenodeProtocols {
         AclException.class,
         FSLimitException.PathComponentTooLongException.class,
         FSLimitException.MaxDirectoryItemsExceededException.class);
-    
-    this.energyBaseDataNodeFilter = new EnergyBaseDataNodeFilter(
+
+    this.blockObserver = new BlockObserver(this,
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME_DEFAULT),
+      conf.getInt(DFSConfigKeys.DFS_ENERGY_ZABBIX_PORT,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_PORT_DEFAULT),
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_URL,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_URL_DEFAULT),
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_USERNAME,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_USERNAME_DEFAULT),
+      conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_PASSWORD,
+          DFSConfigKeys.DFS_ENERGY_ZABBIX_REST_PASSWORD_DEFAULT));
+    this.energyConservingDataNodeFilter = new EnergyConservingDataNodeFilter(
       conf.get(DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME,
           DFSConfigKeys.DFS_ENERGY_ZABBIX_HOSTNAME_DEFAULT),
       conf.getInt(DFSConfigKeys.DFS_ENERGY_ZABBIX_PORT,
@@ -512,21 +526,11 @@ class NameNodeRpcServer implements NamenodeProtocols {
     metrics.incrGetBlockLocations();
 
     LocatedBlocks locatedBlocks = namesystem.getBlockLocations(
-    		getClientMachine(), src, offset, length);
+        getClientMachine(), src, offset, length);
 
-    if (NamenodeWebHdfsMethods.isWebHdfsInvocation()) {
-    	locatedBlocks = this.energyBaseDataNodeFilter.filterBlockLocations(
-    			locatedBlocks, src, UserGroupInformation.getCurrentUser().getUserName(),
-    			NamenodeWebHdfsMethods.getRemoteAddress());
-    } else if(Server.isRpcInvocation()) {
-    	locatedBlocks = this.energyBaseDataNodeFilter.filterBlockLocations(
-    			locatedBlocks, src, Server.getRemoteUser().getUserName(),
-    			Server.getRemoteAddress());
-    } else {
-        LOG.warn("Can't handle getBlockLocations filter action!");
-    }
+    locatedBlocks = this.energyConservingDataNodeFilter.filterBlockLocations(
+        locatedBlocks, src, getCurrentUserName(), getClientMachine());
 
-    
     return locatedBlocks;
   }
   
@@ -579,8 +583,18 @@ class NameNodeRpcServer implements NamenodeProtocols {
 
   @Override // ClientProtocol
   public boolean setReplication(String src, short replication) 
-    throws IOException {  
-    return namesystem.setReplication(src, replication);
+    throws IOException {
+
+    LocatedBlocks blocksBefore = namesystem.getBlockLocations(getClientMachine(), src, 0, Long.MAX_VALUE);
+    String blocksBeforeJson = JsonUtil.toJsonString(blocksBefore); // freeze current list as JSON
+
+    boolean result = namesystem.setReplication(src, replication);
+
+    if (result) {
+      this.blockObserver.setReplication(src, getCurrentUserName(), replication, blocksBeforeJson);
+    }
+
+    return result;
   }
     
   @Override // ClientProtocol
@@ -670,7 +684,15 @@ class NameNodeRpcServer implements NamenodeProtocols {
       stateChangeLog.debug("*DIR* NameNode.complete: "
           + src + " fileId=" + fileId +" for " + clientName);
     }
-    return namesystem.completeFile(src, clientName, last, fileId);
+
+    LocatedBlocks locatedBlocks = namesystem.getBlockLocations(getClientMachine(), src, 0, Long.MAX_VALUE);
+    boolean result = namesystem.completeFile(src, clientName, last, fileId);
+
+    if (result) {
+	    this.blockObserver.complete(src, fileId, getCurrentUserName(), locatedBlocks, result);
+    }
+
+    return result;
   }
 
   /**
@@ -733,6 +755,11 @@ class NameNodeRpcServer implements NamenodeProtocols {
   
   @Override // ClientProtocol
   public void concat(String trg, String[] src) throws IOException {
+    LocatedBlocks srcBlocks[] = new LocatedBlocks[src.length];
+    for (int i = 0; i < src.length; i++)
+      srcBlocks[i] = namesystem.getBlockLocations(getClientMachine(), src[i], 0, Long.MAX_VALUE);
+    this.blockObserver.concat(trg, src, getCurrentUserName(), srcBlocks);
+
     namesystem.concat(trg, src);
   }
   
@@ -756,9 +783,16 @@ class NameNodeRpcServer implements NamenodeProtocols {
       stateChangeLog.debug("*DIR* Namenode.delete: src=" + src
           + ", recursive=" + recursive);
     }
+
+    LocatedBlocks removedBlocks = namesystem.getBlockLocations(getClientMachine(), src, 0, Long.MAX_VALUE);
+    String removedBlocksJson = JsonUtil.toJsonString(removedBlocks); // freeze current list as JSON
+
     boolean ret = namesystem.delete(src, recursive);
-    if (ret) 
+
+    if (ret) {
+      this.blockObserver.delete(src, getCurrentUserName(), removedBlocksJson, recursive);
       metrics.incrDeleteFileOps();
+    }
     return ret;
   }
 
@@ -1255,6 +1289,15 @@ class NameNodeRpcServer implements NamenodeProtocols {
       clientMachine = "";
     }
     return clientMachine;
+  }
+
+  private static String getCurrentUserName() throws IOException {
+    if (NamenodeWebHdfsMethods.isWebHdfsInvocation())
+      return UserGroupInformation.getCurrentUser().getUserName();
+    else if(Server.isRpcInvocation())
+      return Server.getRemoteUser().getUserName();
+    else
+      return null;
   }
 
   @Override

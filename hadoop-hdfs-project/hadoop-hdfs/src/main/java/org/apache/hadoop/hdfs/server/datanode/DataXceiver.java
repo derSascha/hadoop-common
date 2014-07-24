@@ -87,7 +87,7 @@ import org.apache.hadoop.util.DataChecksum;
 import com.google.common.net.InetAddresses;
 import com.google.protobuf.ByteString;
 
-import de.tuberlin.cit.project.energy.hadoop.DataNodeTransferLogger;
+import de.tuberlin.cit.project.energy.hadoop.DataNodeTransferObserver;
 
 /**
  * Thread for processing incoming/outgoing data stream.
@@ -106,7 +106,7 @@ class DataXceiver extends Receiver implements Runnable {
   private long opStartTime; //the start time of receiving an Op
   private final InputStream socketIn;
   private OutputStream socketOut;
-  private final DataNodeTransferLogger dataNodeTransferLogger;
+  private final DataNodeTransferObserver dataNodeTransferObserver;
 
   /**
    * Client Name used in previous operation. Not available on first request
@@ -137,7 +137,7 @@ class DataXceiver extends Receiver implements Runnable {
           + datanode.getXceiverCount());
     }
 
-    this.dataNodeTransferLogger = new DataNodeTransferLogger(
+    this.dataNodeTransferObserver = new DataNodeTransferObserver(
         this.dnConf.zabbixHostname, this.dnConf.zabbixPort);
   }
 
@@ -481,7 +481,7 @@ class DataXceiver extends Receiver implements Runnable {
     checkAccess(out, true, block, blockToken,
         Op.READ_BLOCK, BlockTokenSecretManager.AccessMode.READ);
   
-    this.dataNodeTransferLogger.logTransferStart(datanode.getDisplayName(), remoteAddress, blockToken);
+    this.dataNodeTransferObserver.readBlockStart(datanode.getDisplayName(), remoteAddress, blockToken, blockOffset, length);
 
     // send the block
     BlockSender blockSender = null;
@@ -534,6 +534,7 @@ class DataXceiver extends Receiver implements Runnable {
       }
       datanode.metrics.incrBytesRead((int) read);
       datanode.metrics.incrBlocksRead();
+      this.dataNodeTransferObserver.readBlockEnd(datanode.getDisplayName(), remoteAddress, blockToken, blockOffset, length, read, elapsed());
     } catch ( SocketException ignored ) {
       if (LOG.isTraceEnabled()) {
         LOG.trace(dnR + ":Ignoring exception while serving " + block + " to " +
@@ -613,6 +614,12 @@ class DataXceiver extends Receiver implements Runnable {
             HdfsConstants.SMALL_BUFFER_SIZE));
     checkAccess(replyOut, isClient, block, blockToken,
         Op.WRITE_BLOCK, BlockTokenSecretManager.AccessMode.WRITE);
+
+    this.dataNodeTransferObserver.writeBlockStart(
+        datanode.getDisplayName(), remoteAddress,
+        isDatanode, blockToken,
+        pipelineSize, targets,
+        minBytesRcvd, maxBytesRcvd);
 
     DataOutputStream mirrorOut = null;  // stream to next target
     DataInputStream mirrorIn = null;    // reply from next target
@@ -762,6 +769,8 @@ class DataXceiver extends Receiver implements Runnable {
         block.setGenerationStamp(latestGenerationStamp);
         block.setNumBytes(minBytesRcvd);
       }
+
+      this.dataNodeTransferObserver.writeBlockEnd(datanode.getDisplayName(), remoteAddress, isDatanode, blockToken, block, pipelineSize, elapsed());
       
       // if this write is for a replication request or recovering
       // a failed close for client, then confirm block. For other client-writes,
